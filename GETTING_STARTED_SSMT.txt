@@ -1,0 +1,192 @@
+SSMT — Getting Started (ASCII)
+
+License / Use
+SSMT is open source and released as an open standard. Free to implement with no fees or registration. Provided strictly "as-is," with no warranty, no endorsement, and no claim of exclusive stewardship. When implementing or adapting, cite the concept name "Shunyaya Symbolic Mathematical Temperature (SSMT)" as the origin of the symbolic mathematical temperature approach.
+
+Canonicals
+T_K := max( to_kelvin(T_raw, unit_flag) , eps_TK )
+e_T := ln( T_K / T_ref )
+d_m := ( T_K - T_m ) / DeltaT_m
+a_phase := tanh( c_m * d_m )
+(optional) a_T := tanh( c_T * e_T )
+(optional) a_phase_fused := tanh( sum_i( c_m_i * ( (T_K - T_m_i) / DeltaT_m_i ) ) )
+
+Meaning
+
+e_T is a unitless contrast from a published reference temperature T_ref.
+By default in this bundle we use the log lens:
+e_T := ln( T_K / T_ref )
+Other sanctioned lenses exist (linear, beta, kBT, hybrid, smooth_hybrid, qlog) for special regimes such as cryogenic propellant stability, structural warp stress bands, or off-world habitat life support. You must pick exactly one lens for a deployment, declare it in your manifest, and not silently switch.
+
+a_phase is a bounded dial in (-1,+1) telling you which side of a critical pivot (for example, freezing) you are on and by how much. Negative means you are on the cold-risk side, positive means you are on the warm/safe side, and magnitude tells you “how far.”
+
+a_phase_fused is the multi-pivot survival dial. If you have more than one critical boundary you care about (for example freezing + overheat gel point + burn threshold), you fuse them:
+a_phase_fused := tanh( sum_i( c_m_i * ( (T_K - T_m_i) / DeltaT_m_i ) ) )
+You emit either a_phase (single pivot) or a_phase_fused (multi-pivot), not both.
+
+a_T is an optional bounded "thermal alignment" lane for dashboards, pooling, or slow drift monitoring:
+a_T := tanh( c_T * e_T )
+
+Raw Celsius / Fahrenheit can still be shown to humans for comfort, reporting, compliance, and regulation. Machine logic — alerting, actuation, routing, insurance triggers, billing, warranty enforcement — should consume only symbols like e_T, a_phase (or a_phase_fused), and (if used) Q_phase. This separation is mandatory for safety and audit.
+
+Pooling / fleets note
+When you combine readings across sensors, buildings, vendors, or sites, you MUST treat these bounded dials as bounded dials. The correct way to pool is rapidity-style:
+
+Clamp each dial so it never hits ±1 exactly.
+a_clamped := clamp( a_in , -1+eps_a , +1-eps_a )
+
+Map to rapidity space.
+u_i := atanh( a_clamped_i )
+
+Weighted accumulate across sensors.
+U := sum_i( w_i * u_i )
+W := max( sum_i( w_i ) , eps_w )
+
+Map back, bounded.
+a_pooled := tanh( U / W )
+
+This prevents one extreme or failing sensor from numerically “taking over the fleet” and is required for any shared dashboard or regulator-facing view.
+
+What this bundle does
+This bundle gives you:
+
+• A direct way to encode a raw Celsius reading into SSMT symbols (e_T, a_phase).
+• A self-check harness to prove that the math is stable, monotone, Kelvin-grounded, and bounded.
+• A calibration note that fixes your knobs (T_ref, T_m, etc.) so every site or vendor speaks the same symbolic language.
+• A lightweight pooling rule so groups of sensors can be fused without corruption.
+
+Prerequisites
+• Python 3.8+ on PATH
+• No external libraries required (only Python math)
+• UTC timestamps available from your environment or logger
+
+Folder quick tour
+
+• ssmt_quickstart.py
+End-to-end demo: Celsius → Kelvin floor → e_T → a_phase
+Prints a minimal record with both human-readable temperature and symbol lanes.
+This script uses the default log lens:
+e_T := ln( T_K / T_ref )
+
+• ssmt_verify.py
+Sanity checks (Kelvin clamp, monotonicity of e_T, boundedness of a_phase, basic symmetry)
+Acts as a mini CI gate for procurement, regulators, and internal QA.
+
+• CALIBRATION.txt
+Declares the constants in use (T_ref, T_m, DeltaT_m, c_m, eps_TK, etc.)
+This is what you publish in your manifest so others can interpret your stream.
+
+• GETTING_STARTED.txt
+(this file)
+
+• docs\SSMT_ver2.3.pdf
+Full spec (for engineers, safety, audit, policy).
+
+Run a demo (no inputs)
+
+Windows:
+python ssmt_quickstart.py
+
+macOS / Linux:
+python3 ssmt_quickstart.py
+
+Expected output looks like a small JSON-style block:
+
+timestamp_utc: ...
+T_c_human: 25.0
+T_K: 298.15
+e_T: 0.0
+a_phase: 1.0
+
+How to read that result:
+
+• e_T = 0.0 means the reading sits exactly at the declared reference T_ref (for example T_ref = 298.15 K, ~25 C).
+• a_phase = 1.0 means “well above the cold-risk pivot,” i.e. comfortably on the warm side of freezing.
+This already demonstrates two core SSMT promises: shared reference and phase awareness.
+
+Verify math invariants (golden checks)
+
+Windows:
+python ssmt_verify.py
+
+macOS / Linux:
+python3 ssmt_verify.py
+
+Expected lines:
+
+floor_nonzero_kelvin: True
+reference_zero_contrast: True
+contrast_signs: True
+phase_bounds: True
+monotonic_eT: True
+roundtrip_sanity: True
+ALL CHECKS PASSED
+
+How to interpret:
+
+reference_zero_contrast: True
+Confirms that e_T := ln( T_K / T_ref ) gives 0.0 at T_ref. This locks your baseline.
+
+phase_bounds: True
+Confirms a_phase := tanh( c_m * ( (T_K - T_m) / DeltaT_m ) ) always stays in (-1,+1), and that below-freezing reads map to negative, above-freezing map to positive.
+
+monotonic_eT: True
+Confirms e_T increases strictly as T_K increases, with no weird inversions.
+
+roundtrip_sanity: True
+Confirms two different sensors reporting the same Celsius produce the same e_T under the same manifest — this is the whole “portable across rooms, buildings, vendors” guarantee.
+
+What you must lock before production
+From CALIBRATION.txt, you must publicly declare (and then not silently change):
+
+• T_ref (Kelvin baseline)
+• eps_TK (Kelvin floor)
+• T_m (critical pivot, e.g. freezing / gel point / burn limit / safety edge)
+• DeltaT_m (softness band in Kelvin around that pivot)
+• c_m (sharpness for a_phase)
+• (optional) c_T for a_T := tanh( c_T * e_T ) if you publish that alignment dial
+• Hysteresis knobs (rho_min, rho_max, sigma0, k_side, W) if you use adaptive memory Q_phase to suppress flicker near the pivot
+
+These values form your manifest. Anyone consuming your data can recreate e_T, a_phase (or a_phase_fused), and (if present) Q_phase from raw Kelvin.
+
+Replay checks for logs / audit
+When you emit data in production, you should be able to prove to auditors:
+
+• Kelvin floor was applied:
+T_K := max( to_kelvin(T_raw, unit_flag) , eps_TK )
+
+• Contrast came from the declared lens and reference:
+e_T := ln( T_K / T_ref )
+
+• Phase dial used the declared pivot:
+a_phase := tanh( c_m * ( (T_K - T_m) / DeltaT_m ) )
+
+• If you used adaptive hysteresis for alert stability near freezing / melt / burn boundaries:
+you produced a debounced memory lane Q_phase using
+Q_phase := rho * Q_phase_prev + (1 - rho) * clip( p_side , 0 , 1 )
+with rho derived from recent noise.
+
+Defaults (recommended starting point)
+
+T_ref = 298.15 K (~25 C nominal comfort baseline)
+T_m = 273.15 K (~0 C pivot / freezing)
+DeltaT_m = 2.0 K (softness width around pivot)
+c_m = 1.2 (sharpness for a_phase)
+eps_TK = 1e-6 (Kelvin floor)
+c_T = 1.0 (only if you emit a_T := tanh( c_T * e_T ))
+rho_min = 0.50 (adaptive hysteresis lower memory bound)
+rho_max = 0.95 (adaptive hysteresis upper memory bound)
+sigma0 = 0.1 (noise scaling for hysteresis)
+k_side = 0.5 (1/K slope for p_side)
+W = 30 (samples for short-term noise window)
+
+In plain language
+
+• You convert every reading to Kelvin and apply a tiny floor.
+• You turn that Kelvin value into a unitless contrast e_T.
+• You generate a bounded dial a_phase (or a_phase_fused) that says “which side of the critical boundary are we on, and how hard?”
+• You optionally stabilize that dial over time using Q_phase so alerts don’t flap.
+• You pool bounded dials across sensors using tanh / atanh so one bad sensor cannot dominate the fleet.
+• You publish the knobs you used so anyone else — another building, another city, another vendor, another planet — can reproduce the exact same signals.
+
+After running these two scripts successfully (ssmt_quickstart.py and ssmt_verify.py), and after publishing a manifest with your declared knobs, you are mathematically conformant at the S1 / S2 entry level.

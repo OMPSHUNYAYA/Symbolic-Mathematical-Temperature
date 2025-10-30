@@ -1,0 +1,135 @@
+SSMT — Calibration (ASCII)
+
+Canonicals
+T_K := max( to_kelvin(T_raw, unit_flag) , eps_TK )
+e_T := ln( T_K / T_ref )
+d_m := ( T_K - T_m ) / DeltaT_m
+a_phase := tanh( c_m * d_m )
+(optional) a_T := tanh( c_T * e_T )
+
+Where:
+- e_T is a unitless contrast against a declared reference T_ref.
+- a_phase is a bounded dial in (-1,+1) telling you which side of a critical pivot (e.g. freezing) you are on and how deep.
+- a_T is an optional bounded "thermal alignment" dial for dashboards, pooling, or gating.
+- Human-facing Celsius/Fahrenheit displays are allowed for comfort UI, but machine logic should consume only e_T / a_phase / a_T.
+
+Goal
+Choose stable, published constants (anchors, pivots, floors) so that:
+- e_T is comparable across rooms, buildings, vendors, and cities.
+- a_phase meaningfully distinguishes "cold side" vs "hot side" around an operational pivot such as freezing or gel point, without chattering.
+- Optional a_T stays in (-1,+1) and does not saturate instantly.
+
+Primary knobs and safe defaults
+T_ref = 298.15 K ; ~25 C reference (baseline comfort / nominal regime)
+T_m = 273.15 K ; ~0 C pivot (freezing / melt boundary)
+DeltaT_m = 2.0 K ; softness band around the pivot
+c_m = 1.2 ; sharpness of a_phase around T_m
+eps_TK = 1e-6 ; Kelvin floor so ln() never sees zero
+c_T = 1.0 ; (if emitting a_T) gain for tanh(c_T * e_T)
+rho_min = 0.50 ; lower bound for hysteresis memory weight
+rho_max = 0.95 ; upper bound for hysteresis memory weight
+sigma0 = 0.1 ; noise scaling for adaptive hysteresis
+k_side = 0.5 ; 1/K slope for p_side near T_m in hysteresis
+W = 30 ; samples in sliding window for noise estimate
+
+Interpretation:
+- T_ref defines what "normal" means.
+- T_m and DeltaT_m define where the dangerous phase transition is, and how wide we treat the "edge zone".
+- c_m and c_T decide how aggressively we compress into (-1,+1).
+- eps_TK prevents numerical blowups at or near 0 K.
+- rho_min/rho_max/sigma0/k_side/W control how hard we suppress flicker near the pivot (Section 1.5.x adaptive hysteresis).
+
+Hysteresis / flicker control (adaptive rho)
+sigma_T := std( T_K[t-W+1 : t] )
+sigma_norm := sigma_T / DeltaT_m
+rho_raw := 1 - exp( - sigma_norm / sigma0 )
+rho := clip( rho_raw , rho_min , rho_max )
+
+p_side := 0.5 * ( 1 + tanh( k_side * ( T_K - T_m ) ) )
+Q_phase := rho * Q_phase_prev + ( 1 - rho ) * clip( p_side , 0 , 1 )
+
+Notes:
+- Q_phase is a debounced memory (0..1) of which side of the pivot we have effectively been on.
+- High noise => rho goes up => Q_phase changes slowly => fewer false flips.
+- Low noise => rho goes down => Q_phase updates faster.
+
+Lens calibration quickstart (2 minutes)
+
+Pick a reference T_ref that represents "nominal" or "safe normal" for your use case (e.g. 298.15 K for room comfort, or a process-specific baseline for industrial lines).
+
+Stick to one lens per deployment. Default is log:
+e_T := ln( T_K / T_ref )
+Declare that lens choice in the manifest and DO NOT change it mid-run.
+
+Declare eps_TK. This MUST be positive. We recommend eps_TK = 1e-6.
+
+Publish T_m, DeltaT_m, c_m. These define the pivot dial a_phase.
+Make sure operators understand: a_phase near -1 means "below spec / cold risk", near +1 means "above spec / hot stress".
+
+(Optional) If you plan to emit a_T for dashboards:
+a_T := tanh( c_T * e_T )
+Tune c_T so that:
+
+Not everything is pegged near +1 or -1.
+
+Typical operating range lands in roughly (-0.7 , +0.7).
+Start with c_T = 1.0. If >10% of values hit |a_T| > 0.90, lower c_T (e.g. 0.7). If >70% of values sit in |a_T| < 0.10, raise c_T (e.g. 1.3).
+Once picked, freeze c_T in the manifest.
+
+Sanity metrics (log once/day per site or fleet)
+• saturation rate:
+mean( |a_phase| > 0.90 ) ; should be small unless you truly run at extremes
+If this is huge, maybe c_m is too high or DeltaT_m is too small.
+• dead-zone rate:
+mean( |a_phase| < 0.10 ) ; should be moderate, not 99%
+If this is 99%, you are never leaving the pivot band; probably T_m or DeltaT_m is wrong for that asset.
+• flicker watch:
+count of Q_phase flips per hour around 0.5
+If Q_phase is jumping above/below ~0.5 too often, either k_side is too sharp or rho_min/rho_max are too low/high.
+• drift watch:
+median(e_T) shift day-over-day
+Large drift suggests sensor offset, calibration creep, or a unit flip (C vs F) upstream.
+
+Acceptance checklist
+[ ] Kelvin clamp: T_K := max( to_kelvin(raw), eps_TK ) is enforced before any math.
+[ ] Lens lock: All e_T values use one declared lens and one declared T_ref.
+[ ] Pivot clarity: T_m, DeltaT_m, and c_m are published and match the material/safety boundary we actually care about.
+[ ] Boundedness: a_phase (and optional a_T) are always in (-1,+1).
+[ ] Monotonicity: e_T is strictly monotone in T_K. Higher T_K must not yield lower e_T.
+[ ] Time base: Each record carries timestamp_utc in ISO-8601 UTC and a manifest_id that resolves to the exact knobs above.
+[ ] Reproducibility: Running the same raw series through ssmt_verify.py produces the same e_T / a_phase every time.
+
+Common pitfalls and quick fixes
+• Unit flip (C vs F): A sudden jump in e_T without a matching jump in T_K range is a red flag. Check the upstream to_kelvin() step.
+• Saturated a_phase: If a_phase is almost always +1.0 or -1.0, reduce c_m or increase DeltaT_m to widen the band.
+• Hyperactive alerts near freezing: Enable adaptive hysteresis (Q_phase). 
+Use rho_min=0.50, rho_max=0.95, sigma0=0.1, W=30 as safe starting points, and trigger policies off Q_phase rather than raw a_phase.
+• "Different building, different code path": Not allowed. 
+All sites should share the same manifest layout. Only T_ref, T_m, and related knobs differ — and those differences must be declared.
+
+Minimal manifest crib (publish)
+manifest_id
+timestamp_utc (declaration time)
+lens_id ; e.g. "log"
+T_ref ; Kelvin
+eps_TK
+T_m
+DeltaT_m
+c_m
+(optional) c_T
+hysteresis:
+rho_min
+rho_max
+sigma0
+k_side
+W
+validity_range_K ; expected safe operating range for T_K
+notes:
+unit_flag_in ; e.g. "C", "F", "raw_K"
+timezone_src ; should resolve to UTC
+site_id / asset_id (no PII)
+manifest_hash ; stable hash of this block for audit
+
+One-line takeaway
+Publish your anchors (T_ref, T_m, eps_TK, etc.), lock one lens, and keep the knobs steady. 
+Machines talk in e_T and a_phase (and optional Q_phase), humans can still see °C/°F — and both sides agree on what "too hot," "too cold," and "near the edge" actually mean.
