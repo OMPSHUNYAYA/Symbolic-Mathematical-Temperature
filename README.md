@@ -7,7 +7,7 @@ License: Open standard, open source. (See "License" below for full terms.)
 
 SSMT — Public Demo Bundle (v2.3)
 
-**[Preview document (PDF)](https://github.com/OMPSHUNYAYA/Symbolic-Mathematical-Temperature/blob/main/docs/SSMT_ver2.3.pdf)**
+**[Preview document (PDF)](https://github.com/OMPSHUNYAYA/Symbolic-Mathematical-Temperature/blob/main/SSMT_ver2.3.pdf)**
 
 ## Intro
 
@@ -50,7 +50,7 @@ SSMT is an open standard, open source, observation-only layer; it does not repla
 ## Documents (Preview)
 
 **Full Specification (PDF):**  
-[Preview](https://github.com/OMPSHUNYAYA/Symbolic-Mathematical-Temperature/blob/main/docs/SSMT_ver2.3.pdf) • [Download](https://github.com/OMPSHUNYAYA/Symbolic-Mathematical-Temperature/raw/main/docs/SSMT_ver2.3.pdf)
+[Preview](https://github.com/OMPSHUNYAYA/Symbolic-Mathematical-Temperature/blob/main/SSMT_ver2.3.pdf) • [Download](https://github.com/OMPSHUNYAYA/Symbolic-Mathematical-Temperature/raw/main/SSMT_ver2.3.pdf)
 
 **GETTING_STARTED_SSMT.txt:**  
 [Preview](https://github.com/OMPSHUNYAYA/Symbolic-Mathematical-Temperature/blob/main/GETTING_STARTED_SSMT.txt) • [Download](https://github.com/OMPSHUNYAYA/Symbolic-Mathematical-Temperature/raw/main/GETTING_STARTED_SSMT.txt)
