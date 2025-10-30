@@ -1,6 +1,6 @@
 # SSMT — portable symbolic temperature lanes (stable, comparable, auditable). Observation-only.
 
-![GitHub Stars](https://img.shields.io/github/stars/OMPSHUNYAYA/Symbolic-Mathematical-Temperature?style=flat&logo=github) ![License](https://img.shields.io/badge/license-Open%20Standard%20%2F%20Open%20Source-brightgreen?style=flat&logo=open-source-initiative)
+![GitHub Stars](https://img.shields.io/github/stars/OMPSHUNYAYA/Symbolic-Mathematical-Temperature?style=flat&logo=github) ![License](https://img.shields.io/badge/license-Open%20Standard%20%2F%20Open%20Source-brightgreen?style=flat&logo=open-source-initiative) ![CI](https://github.com/OMPSHUNYAYA/Symbolic-Mathematical-Temperature/actions/workflows/ssmt-ci.yml/badge.svg)
 
 SSMT
 License: Open standard, open source. (See "License" below for full terms.)
